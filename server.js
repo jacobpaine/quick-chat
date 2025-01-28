@@ -1,15 +1,50 @@
+const dotenv = require("dotenv");
+const path = require("path");
+const cors = require("cors");
+const https = require("https");
+const fs = require("fs");
 const express = require("express");
 const http = require("http");
-const { Server } = require("socket.io");
-const dotenv = require("dotenv");
 
 dotenv.config();
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server);
+app.use(
+  "/socket.io",
+  express.static(path.join(__dirname, "node_modules/socket.io/client-dist"))
+);
+app.use(express.static(path.join(__dirname, "public")));
 
-app.use(express.static("public"));
+const options = {
+  key: fs.readFileSync("./certs/privkey.pem"),
+  cert: fs.readFileSync("./certs/fullchain.pem"),
+};
+
+const server = https.createServer(options, app);
+http
+  .createServer((req, res) => {
+    res.writeHead(301, { Location: `https://${req.headers.host}${req.url}` });
+    res.end();
+  })
+  .listen(80, () => {
+    console.log("HTTP server redirecting to HTTPS");
+  });
+
+http.createServer(app).listen(8081, () => {
+  console.log("HTTP server running on http://localhost:8081");
+});
+
+const io = require("socket.io")(server, {
+  cors: {
+    origin: ["https://chat.finetunedfunctions.com", "http://localhost:8081"],
+    methods: ["GET", "POST"],
+  },
+  path: "/quickchat/socket.io",
+});
+
+app.use(cors({ origin: "https://finetunedfunctions.com" }));
+app.use(express.static(path.join(__dirname, "public")));
+app.use("/quickchat", express.static(path.join(__dirname, "public")));
 
 const roomMap = {
   General: ["Tech Talk", "Casual Chat"],
@@ -25,8 +60,7 @@ io.on("connection", (socket) => {
   const defaultRoom = "General";
 
   socket.join(defaultRoom);
-  if (!roomUsers[defaultRoom]) roomUsers[defaultRoom] = new Set();
-
+  roomUsers[defaultRoom] = roomUsers[defaultRoom] || new Set();
   socket.emit("roomMap", roomMap[defaultRoom]);
   socket.emit("nicknamePrompt", "Please enter your nickname:");
   socket.emit("message", `Welcome to the ${defaultRoom} chat!`);
@@ -43,7 +77,6 @@ io.on("connection", (socket) => {
       roomUsers[defaultRoom].add(nickname);
       io.to(defaultRoom).emit("userList", Array.from(roomUsers[defaultRoom]));
       socket.emit("nicknameSuccess", `Your nickname is set to ${nickname}.`);
-      socket.emit("message", `Your nickname is set to ${nickname}.`);
     }
   });
 
@@ -58,31 +91,24 @@ io.on("connection", (socket) => {
 
     socket.leave(previousRoom);
     socket.join(roomName);
-    if (!roomUsers[roomName]) roomUsers[roomName] = new Set();
+    roomUsers[roomName] = roomUsers[roomName] || new Set();
     roomUsers[roomName].add(nickname);
     io.to(roomName).emit("userList", Array.from(roomUsers[roomName]));
     socket.emit("roomMap", roomMap[roomName]);
     socket.emit("message", `You have joined the ${roomName} chat.`);
     socket
       .to(roomName)
-      .emit(
-        "message",
-        `${userNicknames[socket.id] || "A user"} has joined the room.`
-      );
-  });
-
-  socket.on("leaveRoom", (roomName) => {
-    socket.leave(roomName);
-    socket.to(roomName).emit("message", "A user has left the room.");
+      .emit("message", `${nickname || "A user"} has joined the room.`);
   });
 
   socket.on("message", ({ roomName, message }) => {
     const nickname = userNicknames[socket.id] || "Anonymous";
-    io.to(roomName).emit("message", `${nickname}: ${message}`);
+    const fullMessage = `${nickname}: ${message}`;
+    io.to(roomName).emit("message", fullMessage);
   });
 
   socket.on("disconnect", () => {
-    const nickname = userNicknames[socket.id] || "A user";
+    const nickname = userNicknames[socket.id];
     delete userNicknames[socket.id];
 
     for (const roomName in roomUsers) {
@@ -91,11 +117,10 @@ io.on("connection", (socket) => {
         io.to(roomName).emit("userList", Array.from(roomUsers[roomName]));
       }
     }
-    console.log(`${nickname} disconnected`);
   });
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+const PORT = process.env.PORT || 443;
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server is running on https://chat.finetunedfunctions.com`);
 });

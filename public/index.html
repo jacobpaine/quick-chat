@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8" />
-  <link rel="stylesheet" href="index.css">
+  <link rel="stylesheet" href="/quickchat/index.css">
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Chat Room</title>
 </head>
@@ -22,15 +22,15 @@
       </div>
     </div>
     <div id="chat-container">
-      <textarea id="chat-box" readonly></textarea>
+      <div id="chat-box" class="chat-box"></div>
       <div id="input-container">
         <input id="message-input" type="text" placeholder="Type a message..." />
         <button id="send-btn">Send</button>
       </div>
     </div>
   </div>
-  <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script src="/quickchat/script.js"></script>
 </body>
 
 </html>
